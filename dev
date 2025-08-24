@@ -1,0 +1,58 @@
+#!/bin/bash
+
+cd PRJ_PATH
+
+# Export current user info for docker-compose
+export HOST_UID=$(id -u)
+export HOST_GID=$(id -g)
+export HOST_USER=$(whoami)
+
+# Start the container
+docker compose up --force-recreate --build -d
+
+# Function to wait for container to be ready
+wait_for_container_ready() {
+    local container_name="python-dev-env"
+    local timeout=120  # Increased timeout for build + setup
+    
+    echo "Waiting for container to complete setup..."
+    
+    # Method 1: Wait for the setup completion log message
+    timeout "$timeout" bash -c "
+        while true; do
+            if docker logs $container_name 2>&1 | grep -q 'CONTAINER SETUP COMPLETE'; then
+                echo 'Container setup is complete!'
+                exit 0
+            fi
+            
+            # Also check if container has failed
+            if [ \"\$(docker inspect --format='{{.State.Status}}' $container_name 2>/dev/null)\" = \"exited\" ]; then
+                echo 'Container has exited unexpectedly!'
+                docker logs $container_name
+                exit 1
+            fi
+            
+            sleep 2
+        done
+    "
+    
+    local exit_code=$?
+    if [ $exit_code -eq 124 ]; then
+        echo "Timeout waiting for container to be ready"
+        echo "Container logs:"
+        docker logs $container_name
+        return 1
+    elif [ $exit_code -ne 0 ]; then
+        echo "Container setup failed"
+        return 1
+    fi
+}
+
+# Wait for container to be ready
+if wait_for_container_ready; then
+    # Connect to the container with the host user
+    docker exec -it --user $HOST_USER python-dev-env bash
+else
+    echo "Failed to start development environment"
+    exit 1
+fi
