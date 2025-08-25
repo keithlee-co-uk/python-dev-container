@@ -161,7 +161,7 @@ docker run -d \
         echo '$HOST_USER ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers &&
         chown -R $HOST_UID:$HOST_GID /repo &&
         mkdir -p /home/$HOST_USER/.config /home/$HOST_USER/.local/share/nvim /home/$HOST_USER/.local/state/nvim /home/$HOST_USER/.cache/nvim &&
-        chown -R $HOST_UID:$HOST_GID /home/$HOST_USER/.config /home/$HOST_USER/.local /home/$HOST_USER/.cache &&
+        chown -R $HOST_UID:$HOST_GID /home/$HOST_USER &&
         apt update && 
         apt install -y neovim git &&
         pip install --upgrade pip &&
@@ -236,3 +236,4 @@ else
     echo "Failed to start development environment"
     exit 1
 fi
+

@@ -84,3 +84,4 @@ echo "  project/requirements-test.txt            - Test dependencies"
 echo ""
 echo "Available projects:"
 ls -la "${REPO_PATH}" | grep "^d" | awk '{print "  - " $9}' | grep -v "  - \.$" | grep -v "  - \.\.$"
+
