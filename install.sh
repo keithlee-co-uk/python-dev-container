@@ -41,7 +41,7 @@ services:
         neovim 
         git &&
       pip install --upgrade pip &&
-      pip install -r python-dev-container/requirements.txt &&
+      pip install -r ${PRJ_PATH}python-dev-container/requirements.txt &&
       echo 'CONTAINER SETUP COMPLETE' &&
       touch /tmp/container_ready &&
       su - \$HOST_USER -c 'cd /repo && exec /bin/bash'
