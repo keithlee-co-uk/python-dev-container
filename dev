@@ -2,22 +2,197 @@
 
 cd PRJ_PATH
 
+# Parse arguments
+PROJECT_NAME=""
+ENVIRONMENT="dev"  # Default environment
+SHOW_HELP=false
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --env)
+            ENVIRONMENT="$2"
+            shift 2
+            ;;
+        --help|-h)
+            SHOW_HELP=true
+            shift
+            ;;
+        -*)
+            echo "Unknown option $1"
+            SHOW_HELP=true
+            shift
+            ;;
+        *)
+            if [ "$PROJECT_NAME" = "" ]; then
+                PROJECT_NAME="$1"
+            else
+                echo "Error: Multiple project names provided"
+                SHOW_HELP=true
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ "$SHOW_HELP" = true ]; then
+    echo "Usage: dev [project-name] [--env environment]"
+    echo ""
+    echo "Arguments:"
+    echo "  project-name           Name of the project directory (optional)"
+    echo ""
+    echo "Options:"
+    echo "  --env <environment>    Environment: dev, prod, test (default: dev)"
+    echo "  --help, -h            Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  dev                          # General development environment"
+    echo "  dev my-project               # Project-specific development"
+    echo "  dev my-project --env prod    # Project with production dependencies"
+    echo "  dev web-app --env test       # Project with test dependencies"
+    echo ""
+    echo "Requirements file priority (first found wins):"
+    echo "  1. requirements-<env>.txt    (e.g., requirements-dev.txt)"
+    echo "  2. requirements.txt          (fallback)"
+    exit 0
+fi
+
+# Validate environment
+case $ENVIRONMENT in
+    dev|prod|test)
+        echo "Environment: $ENVIRONMENT"
+        ;;
+    *)
+        echo "Error: Invalid environment '$ENVIRONMENT'. Valid options: dev, prod, test"
+        exit 1
+        ;;
+esac
+
+# Set up project-specific variables
+REPO_PATH=$(dirname "PRJ_PATH")
+if [ "$PROJECT_NAME" != "" ]; then
+    echo "Setting up development environment for project: $PROJECT_NAME"
+    
+    # Verify the project directory exists
+    if [ ! -d "$REPO_PATH/$PROJECT_NAME" ]; then
+        echo "Error: Project directory '$REPO_PATH/$PROJECT_NAME' does not exist"
+        echo "Available projects:"
+        ls -d "$REPO_PATH"/*/ 2>/dev/null | xargs -n 1 basename 2>/dev/null || echo "  No project directories found"
+        exit 1
+    fi
+    
+    CONTAINER_NAME="python-dev-env"
+else
+    echo "Setting up general development environment"
+    CONTAINER_NAME="python-dev-env"
+fi
+
 # Export current user info for docker-compose
 export HOST_UID=$(id -u)
 export HOST_GID=$(id -g)
 export HOST_USER=$(whoami)
+export DEV_CONTAINER_PATH=$(basename "PRJ_PATH")
 
-# Start the container
-docker compose up --force-recreate --build -d
+# Function to determine requirements file
+get_requirements_file() {
+    local project_path="$1"
+    local env="$2"
+    
+    # Priority: requirements-<env>.txt, then requirements.txt
+    local env_requirements="$project_path/requirements-$env.txt"
+    local default_requirements="$project_path/requirements.txt"
+    
+    if [ -f "$env_requirements" ]; then
+        echo "$env_requirements"
+    elif [ -f "$default_requirements" ]; then
+        echo "$default_requirements"
+    else
+        echo ""
+    fi
+}
+
+# Stop and remove any existing container (always use the same name)
+echo "Cleaning up any existing container..."
+docker stop "$CONTAINER_NAME" 2>/dev/null || true
+docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
+# Determine working directory and project requirements
+if [ "$PROJECT_NAME" != "" ]; then
+    WORK_DIR="/repo/$PROJECT_NAME"
+    PROJECT_REQUIREMENTS=$(get_requirements_file "$REPO_PATH/$PROJECT_NAME" "$ENVIRONMENT")
+    
+    if [ "$PROJECT_REQUIREMENTS" != "" ]; then
+        PROJECT_REQUIREMENTS_DOCKER="/repo/$PROJECT_NAME/$(basename "$PROJECT_REQUIREMENTS")"
+        echo "Will install project requirements from: $(basename "$PROJECT_REQUIREMENTS")"
+    else
+        PROJECT_REQUIREMENTS_DOCKER=""
+        echo "No project requirements file found for environment '$ENVIRONMENT'"
+    fi
+else
+    WORK_DIR="/repo"
+    PROJECT_REQUIREMENTS_DOCKER=""
+fi
+
+# Create the network if it doesn't exist
+docker network create python-dev-container_dev-network 2>/dev/null || true
+
+echo "Starting container: $CONTAINER_NAME"
+
+# Run the container with environment-specific setup
+docker run -d \
+    --name "$CONTAINER_NAME" \
+    --user root \
+    -w "$WORK_DIR" \
+    -v "$REPO_PATH:/repo" \
+    -v ~/.ssh:/home/$HOST_USER/.ssh \
+    -v "$REPO_PATH/$DEV_CONTAINER_PATH/nvim-config:/home/$HOST_USER/.config/nvim" \
+    -e TERM=xterm-256color \
+    -e HOST_UID=$HOST_UID \
+    -e HOST_GID=$HOST_GID \
+    -e HOST_USER=$HOST_USER \
+    -e PROJECT_NAME=$PROJECT_NAME \
+    -e ENVIRONMENT=$ENVIRONMENT \
+    -e DEV_CONTAINER_PATH=$DEV_CONTAINER_PATH \
+    --network python-dev-container_dev-network \
+    -it python:3.11-slim \
+    /bin/bash -c "
+        groupadd -g $HOST_GID $HOST_USER || true;
+        useradd -u $HOST_UID -g $HOST_GID -M -s /bin/bash $HOST_USER || true;
+        echo '$HOST_USER ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers &&
+        chown -R $HOST_UID:$HOST_GID /repo &&
+        mkdir -p /home/$HOST_USER/.config /home/$HOST_USER/.local/share/nvim /home/$HOST_USER/.local/state/nvim /home/$HOST_USER/.cache/nvim &&
+        chown -R $HOST_UID:$HOST_GID /home/$HOST_USER/.config /home/$HOST_USER/.local /home/$HOST_USER/.cache &&
+        apt update && 
+        apt install -y neovim git &&
+        pip install --upgrade pip &&
+        
+        # Install base dev container requirements
+        if [ -f \"/repo/\$DEV_CONTAINER_PATH/requirements.txt\" ]; then
+            echo \"Installing base dev requirements from \$DEV_CONTAINER_PATH/requirements.txt\"
+            pip install -r \"/repo/\$DEV_CONTAINER_PATH/requirements.txt\"
+        fi &&
+        
+        # Install project-specific requirements based on environment
+        if [ \"$PROJECT_REQUIREMENTS_DOCKER\" != \"\" ] && [ -f \"$PROJECT_REQUIREMENTS_DOCKER\" ]; then
+            echo \"Installing $ENVIRONMENT requirements from $PROJECT_REQUIREMENTS_DOCKER\"
+            pip install -r \"$PROJECT_REQUIREMENTS_DOCKER\"
+        elif [ \"$PROJECT_NAME\" != \"\" ]; then
+            echo \"No $ENVIRONMENT requirements found for project $PROJECT_NAME\"
+        fi &&
+        
+        echo 'CONTAINER SETUP COMPLETE' &&
+        touch /tmp/container_ready &&
+        su - $HOST_USER -c 'cd $WORK_DIR && exec /bin/bash'
+    "
 
 # Function to wait for container to be ready
 wait_for_container_ready() {
-    local container_name="python-dev-env"
+    local container_name="$CONTAINER_NAME"
     local timeout=120  # Increased timeout for build + setup
     
     echo "Waiting for container to complete setup..."
     
-    # Method 1: Wait for the setup completion log message
+    # Wait for the setup completion log message
     timeout "$timeout" bash -c "
         while true; do
             if docker logs $container_name 2>&1 | grep -q 'CONTAINER SETUP COMPLETE'; then
@@ -51,7 +226,12 @@ wait_for_container_ready() {
 # Wait for container to be ready
 if wait_for_container_ready; then
     # Connect to the container with the host user
-    docker exec -it --user $HOST_USER python-dev-env bash
+    if [ "$PROJECT_NAME" != "" ]; then
+        echo "Connecting to project container: $CONTAINER_NAME"
+        echo "Working directory: $WORK_DIR"
+        echo "Environment: $ENVIRONMENT"
+    fi
+    docker exec -it --user $HOST_USER "$CONTAINER_NAME" bash
 else
     echo "Failed to start development environment"
     exit 1

@@ -21,6 +21,7 @@ services:
       - HOST_UID=\${HOST_UID}
       - HOST_GID=\${HOST_GID}
       - HOST_USER=\${HOST_USER}
+      - DEV_CONTAINER_PATH=${PROJECT_NAME}
     stdin_open: true
     tty: true
     healthcheck:
@@ -41,7 +42,11 @@ services:
         neovim 
         git &&
       pip install --upgrade pip &&
-      pip install -r ${PRJ_PATH}python-dev-container/requirements.txt &&
+      if [ -f \"/repo/\$DEV_CONTAINER_PATH/requirements.txt\" ]; then
+        pip install -r \"/repo/\$DEV_CONTAINER_PATH/requirements.txt\"
+      else
+        echo \"No base requirements.txt found in \$DEV_CONTAINER_PATH\"
+      fi &&
       echo 'CONTAINER SETUP COMPLETE' &&
       touch /tmp/container_ready &&
       su - \$HOST_USER -c 'cd /repo && exec /bin/bash'
@@ -62,9 +67,20 @@ chmod u+x ~/bin/dev
 echo "Setup complete!"
 echo "Project path: ${PRJ_PATH}"
 echo "Repo path (mounted as /repo): ${REPO_PATH}"
-echo "Working directory in container: /repo"
 echo "Docker compose file created at: ${PRJ_PATH}/docker-compose.yaml"
 echo "Neovim config will be mounted from: ${PRJ_PATH}/nvim-config"
 echo ""
-echo "Container will have access to all projects in /repo:"
-ls -la "${REPO_PATH}" | grep "^d" | awk '{print "  - /repo/" $9}' | grep -v "/repo/\.$" | grep -v "/repo/\.\.$"
+echo "Usage:"
+echo "  dev                              - General development environment"
+echo "  dev <project-name>               - Project-specific development environment"
+echo "  dev <project-name> --env prod    - Project with production dependencies"
+echo "  dev <project-name> --env test    - Project with test dependencies"
+echo ""
+echo "Requirements file structure (recommended):"
+echo "  python-dev-container/requirements.txt    - Base dev tools (pynvim, etc.)"
+echo "  project/requirements.txt                 - Default/production dependencies"
+echo "  project/requirements-dev.txt             - Development dependencies"
+echo "  project/requirements-test.txt            - Test dependencies"
+echo ""
+echo "Available projects:"
+ls -la "${REPO_PATH}" | grep "^d" | awk '{print "  - " $9}' | grep -v "  - \.$" | grep -v "  - \.\.$"
