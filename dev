@@ -4,7 +4,7 @@ cd PRJ_PATH
 
 # Parse arguments
 PROJECT_NAME=""
-ENVIRONMENT="dev"  # Default environment
+ENVIRONMENT="dev"
 SHOW_HELP=false
 
 # Parse command line arguments
