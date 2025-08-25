@@ -6,7 +6,7 @@ REPO_PATH=$(dirname "$PRJ_PATH")
 cd $PRJ_PATH
 
 # Create docker-compose.yaml with correct paths
-cat > docker-compose.yaml << EOF
+cat >docker-compose.yaml <<EOF
 services:
   python-dev:
     image: python:3.11-slim
@@ -39,8 +39,16 @@ services:
       chown -R \$HOST_UID:\$HOST_GID /home/\$HOST_USER/.config /home/\$HOST_USER/.local /home/\$HOST_USER/.cache &&
       apt update && 
       apt install -y 
+        curl
+        ripgrep
+        gcc
+        luarocks
         neovim 
-        git &&
+        git
+        fd-find
+        fzf
+        tree-sitter-cli
+        lazygit &&
       pip install --upgrade pip &&
       if [ -f \"/repo/\$DEV_CONTAINER_PATH/requirements.txt\" ]; then
         pip install -r \"/repo/\$DEV_CONTAINER_PATH/requirements.txt\"
@@ -61,7 +69,7 @@ EOF
 
 # make the `dev` script available to the user
 mkdir -p ~/bin
-cat dev|sed "s,PRJ_PATH,${PRJ_PATH},g" > ~/bin/dev
+cat dev | sed "s,PRJ_PATH,${PRJ_PATH},g" >~/bin/dev
 chmod u+x ~/bin/dev
 
 echo "Setup complete!"
@@ -84,4 +92,3 @@ echo "  project/requirements-test.txt            - Test dependencies"
 echo ""
 echo "Available projects:"
 ls -la "${REPO_PATH}" | grep "^d" | awk '{print "  - " $9}' | grep -v "  - \.$" | grep -v "  - \.\.$"
-

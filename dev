@@ -188,7 +188,7 @@ docker run -d \
 # Function to wait for container to be ready
 wait_for_container_ready() {
     local container_name="$CONTAINER_NAME"
-    local timeout=120  # Increased timeout for build + setup
+    local timeout=240
     
     echo "Waiting for container to complete setup..."
     
