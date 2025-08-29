@@ -1,2 +1,4 @@
+nvim-config/*.json
+*.yaml
 .nvimlog
-docker-compose.yaml
+core.*
